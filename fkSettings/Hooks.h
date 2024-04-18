@@ -6,7 +6,6 @@
 
 typedef struct IUnknown IUnknown;
 
-//#include "polyhook2/Detour/x86Detour.hpp"
 #include <Windows.h>
 
 class Hooks
