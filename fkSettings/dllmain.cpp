@@ -25,6 +25,7 @@ extern "C" { int __afxForceUSRDLL; }
 std::string lang;
 CButton advancedOptionsBtn;
 LPCTSTR advancedOptionsLabel;
+bool leftAlign = false;
 
 //Run the settings app if it exists
 void HandleButtonClick(HWND hWnd)
@@ -47,10 +48,11 @@ void HandleButtonClick(HWND hWnd)
     }
 }
 
+//The pointer to the original window message processing function
+WNDPROC ogVideoOptWndProc = nullptr;
 
-WNDPROC g_pOldWndProc = nullptr;
-
-LRESULT CALLBACK ParentWndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
+//Process the Video options tab's incoming messages
+LRESULT CALLBACK VideoOptWndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
 {
     switch (message)
     {
@@ -69,16 +71,17 @@ LRESULT CALLBACK ParentWndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lP
             if(data == 1)
                 HandleButtonClick(hButtonClicked);
             else //Something else has been clicked, let the frontend handle it
-                return CallWindowProc(g_pOldWndProc, hWnd, message, wParam, lParam);
+                return CallWindowProc(ogVideoOptWndProc, hWnd, message, wParam, lParam);
         }
     }
     break;
     default:
-        return CallWindowProc(g_pOldWndProc, hWnd, message, wParam, lParam);
+        return CallWindowProc(ogVideoOptWndProc, hWnd, message, wParam, lParam);
     }
     return 0;
 }
 
+//Function that hooks to the CreateDialogIndirectParamA method
 typedef HWND(WINAPI* CreateDialogIndirectParamAType)(HINSTANCE hInstance, LPCDLGTEMPLATEA lpTemplate, HWND hWndParent, DLGPROC lpDialogFunc, LPARAM dwInitParam);
 CreateDialogIndirectParamAType pCreateDialogIndirectParamA = nullptr; //original function pointer after hook
 CreateDialogIndirectParamAType pCreateDialogIndirectParamATarget; //original function pointer BEFORE hook do not call this!
@@ -96,31 +99,40 @@ HWND WINAPI detourCreateDialogIndirectParamA(HINSTANCE hInstance, LPCDLGTEMPLATE
             || title == L"Video opties" || title == L"Opções de vídeo" || title == L"Video-Optionen"
             || title == L"Opciones de vídeo" || title == L"Opciones Video")
         {
-            int xPreview = 280;
-            int yPreview = 23;
 
-            int previewWidth = 315;
+            CRect previewRect;
+            CWnd *previewWnd = pWnd->GetDlgItem(1258);
+            previewWnd->GetWindowRect(&previewRect);
+            pWnd->ScreenToClient(&previewRect);
 
             HDC hDC = GetDC(NULL);
             RECT r = { 0, 0, 0, 0 };
             DrawText(hDC, advancedOptionsLabel, _tcslen(advancedOptionsLabel), &r, DT_CALCRECT | DT_NOPREFIX | DT_SINGLELINE);
             long textWidth = abs(r.right - r.left);
+            
+            int buttonWidth = textWidth;
 
-            int buttonWidth = textWidth + 8;
+            if (leftAlign)
+                buttonWidth += 8;
+            else
+                buttonWidth += 13;
 
             int buttonHeight = 25;
 
-            RECT rect;
-            rect.left = xPreview + (previewWidth / 2) - (buttonWidth / 2);
-            rect.top = yPreview - (buttonHeight / 2);
-            rect.right = rect.left + buttonWidth;
-            rect.bottom = rect.top + buttonHeight;
+            RECT btnRect;
+            btnRect.left = previewRect.left + (previewRect.Width() / 2) - (buttonWidth / 2);
+            btnRect.top = (previewRect.top / 2) - (buttonHeight / 2);
+            btnRect.right = btnRect.left + buttonWidth;
+            btnRect.bottom = btnRect.top + buttonHeight;
 
-            advancedOptionsBtn.Create(advancedOptionsLabel, WS_CHILD | WS_VISIBLE | BS_PUSHBUTTON | BS_LEFT, rect, pWnd, BUTTON_IDENTIFIER);
+            if(leftAlign)
+                advancedOptionsBtn.Create(advancedOptionsLabel, WS_CHILD | WS_VISIBLE | BS_PUSHBUTTON | BS_LEFT, btnRect, pWnd, BUTTON_IDENTIFIER);
+            else
+                advancedOptionsBtn.Create(advancedOptionsLabel, WS_CHILD | WS_VISIBLE | BS_PUSHBUTTON, btnRect, pWnd, BUTTON_IDENTIFIER);
 
             SetWindowLongPtr(advancedOptionsBtn.m_hWnd, GWLP_USERDATA, BUTTON_IDENTIFIER);
 
-            g_pOldWndProc = (WNDPROC)SetWindowLongPtr(returnVal, GWLP_WNDPROC, (LONG_PTR)ParentWndProc);
+            ogVideoOptWndProc = (WNDPROC)SetWindowLongPtr(returnVal, GWLP_WNDPROC, (LONG_PTR)VideoOptWndProc);
         }
     }
 
@@ -164,6 +176,7 @@ void AssignLabels()
     else if (lang == "ru")
     {
         advancedOptionsLabel = _TEXT("Расширенные настройки");
+        leftAlign = true;
     }
     else if (lang == "sv")
     {
