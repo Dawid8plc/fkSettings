@@ -99,18 +99,27 @@ HWND WINAPI detourCreateDialogIndirectParamA(HINSTANCE hInstance, LPCDLGTEMPLATE
             || title == L"Video opties" || title == L"Opções de vídeo" || title == L"Video-Optionen"
             || title == L"Opciones de vídeo" || title == L"Opciones Video")
         {
-
+            //Get preview rectangle
             CRect previewRect;
             CWnd *previewWnd = pWnd->GetDlgItem(1258);
             previewWnd->GetWindowRect(&previewRect);
             pWnd->ScreenToClient(&previewRect);
+            //
 
-            HDC hDC = GetDC(NULL);
-            RECT r = { 0, 0, 0, 0 };
-            DrawText(hDC, advancedOptionsLabel, _tcslen(advancedOptionsLabel), &r, DT_CALCRECT | DT_NOPREFIX | DT_SINGLELINE);
-            long textWidth = abs(r.right - r.left);
-            
-            int buttonWidth = textWidth;
+            //Calculate text size, 2002 is one of the checkboxes in Video options menu.
+            CWnd *comboBox = pWnd->GetDlgItem(2002);
+            CDC *comboDC = comboBox->GetDC();
+
+            CFont *font = comboBox->GetFont();
+
+            CFont *old = comboDC->SelectObject(font);
+
+            CSize textSize = comboDC->GetTextExtent(advancedOptionsLabel);
+
+            comboDC->SelectObject(old);
+
+            int buttonWidth = textSize.cx;
+            //
 
             if (leftAlign)
                 buttonWidth += 8;
@@ -129,6 +138,8 @@ HWND WINAPI detourCreateDialogIndirectParamA(HINSTANCE hInstance, LPCDLGTEMPLATE
                 advancedOptionsBtn.Create(advancedOptionsLabel, WS_CHILD | WS_VISIBLE | BS_PUSHBUTTON | BS_LEFT, btnRect, pWnd, BUTTON_IDENTIFIER);
             else
                 advancedOptionsBtn.Create(advancedOptionsLabel, WS_CHILD | WS_VISIBLE | BS_PUSHBUTTON, btnRect, pWnd, BUTTON_IDENTIFIER);
+
+            advancedOptionsBtn.SetFont(font);
 
             SetWindowLongPtr(advancedOptionsBtn.m_hWnd, GWLP_USERDATA, BUTTON_IDENTIFIER);
 
