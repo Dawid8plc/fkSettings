@@ -28,6 +28,19 @@ CButton advancedOptionsBtn;
 LPCTSTR advancedOptionsLabel;
 bool leftAlign = false;
 
+bool IPXEnabled = false;
+
+bool createAdvancedOptions = false;
+bool overrideAddressBook = false;
+
+double GetDpiScaleFactor(HWND hwnd)
+{
+    HDC hdc = GetDC(hwnd);
+    int dpi = GetDeviceCaps(hdc, LOGPIXELSX);
+    ReleaseDC(hwnd, hdc);
+    return dpi / 96.0; // 96 is the default DPI
+}
+
 //Run the settings app if it exists
 void HandleButtonClick(HWND hWnd)
 {
@@ -52,7 +65,132 @@ void HandleButtonClick(HWND hWnd)
 //The pointer to the original window message processing function
 WNDPROC ogVideoOptWndProc = nullptr;
 
+WNDPROC ogNetworkPlayWndProc = nullptr;
+WNDPROC ogAddressBookWndProc = nullptr;
+WNDPROC ogIPXBtnWndProc = nullptr;
+WNDPROC ogTCPBtnWndProc = nullptr;
+
 CWnd* hint;
+
+//Process the TCP button's incoming messages
+LRESULT CALLBACK TCPBtnWndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
+{
+    int wmId = LOWORD(wParam);
+    int wmEvent = HIWORD(wParam);
+
+    switch (message)
+    {
+    case WM_LBUTTONDOWN:
+    {
+        LRESULT result = CallWindowProc(ogTCPBtnWndProc, hWnd, message, wParam, lParam);
+        IPXEnabled = false;
+        return result;
+    }
+    break;
+    default:
+        return CallWindowProc(ogTCPBtnWndProc, hWnd, message, wParam, lParam);
+    }
+    return 0;
+}
+
+//Process the IPX button's incoming messages
+LRESULT CALLBACK IPXBtnWndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
+{
+    int wmId = LOWORD(wParam);
+    int wmEvent = HIWORD(wParam);
+
+    switch (message)
+    {
+    case WM_LBUTTONDOWN:
+    {
+        LRESULT result = CallWindowProc(ogIPXBtnWndProc, hWnd, message, wParam, lParam);
+        IPXEnabled = true;
+        return result;
+    }
+    break;
+    default:
+        return CallWindowProc(ogIPXBtnWndProc, hWnd, message, wParam, lParam);
+    }
+    return 0;
+}
+
+//Process the Address book button's incoming messages
+LRESULT CALLBACK AddressBookBtnWndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
+{
+    int wmId = LOWORD(wParam);
+    int wmEvent = HIWORD(wParam);
+
+    switch (message)
+    {
+    case WM_ENABLE:
+    {
+        //Prevent the frontend from disabling the address book button
+        LRESULT result = CallWindowProc(ogAddressBookWndProc, hWnd, message, wParam, lParam);
+
+        if(wmId == 0)
+            EnableWindow(hWnd, true);
+
+        return result;
+    }
+    break;
+    default:
+        return CallWindowProc(ogAddressBookWndProc, hWnd, message, wParam, lParam);
+    }
+    return 0;
+}
+
+//Process the Network Play tab's incoming messages
+LRESULT CALLBACK NetworkPlayWndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
+{
+    int wmId = LOWORD(wParam);
+    int wmEvent = HIWORD(wParam);
+
+    switch (message)
+    {
+    case WM_COMMAND:
+    {
+        if (wmEvent == BN_CLICKED)
+        {
+            // Handle button click
+            HWND hButtonClicked = (HWND)lParam;
+
+            auto data = GetWindowLongPtr(hButtonClicked, GWLP_USERDATA);
+
+            //Address Book btn
+            if (wmId == 1243) {
+                if (IPXEnabled) 
+                {
+                    //Run the custom IPX address book
+                    bool exists = std::filesystem::exists("ipxaddress.exe");
+
+                    if (exists)
+                    {
+                        STARTUPINFOA si;
+                        PROCESS_INFORMATION pi;
+
+                        ZeroMemory(&si, sizeof(si));
+                        si.cb = sizeof(si);
+                        ZeroMemory(&pi, sizeof(pi));
+
+                        CreateProcessA("ipxaddress.exe", NULL, NULL, NULL, FALSE, CREATE_NEW_CONSOLE, NULL, NULL, &si, &pi);
+
+                        CloseHandle(pi.hProcess);
+                        CloseHandle(pi.hThread);
+                    }
+                }
+                else
+                    return CallWindowProc(ogNetworkPlayWndProc, hWnd, message, wParam, lParam);
+            }
+            else //Something else has been clicked, let the frontend handle it
+                return CallWindowProc(ogNetworkPlayWndProc, hWnd, message, wParam, lParam);
+        }
+    }
+    break;
+    default:
+        return CallWindowProc(ogNetworkPlayWndProc, hWnd, message, wParam, lParam);
+    }
+    return 0;
+}
 
 //Process the Video options tab's incoming messages
 LRESULT CALLBACK VideoOptWndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
@@ -71,7 +209,7 @@ LRESULT CALLBACK VideoOptWndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM 
             auto data = GetWindowLongPtr(hButtonClicked, GWLP_USERDATA);
 
             //Advanced Options button
-            if(data == 1)
+            if (data == 1)
                 HandleButtonClick(hButtonClicked);
             else //Something else has been clicked, let the frontend handle it
                 return CallWindowProc(ogVideoOptWndProc, hWnd, message, wParam, lParam);
@@ -91,73 +229,110 @@ CreateDialogIndirectParamAType pCreateDialogIndirectParamATarget; //original fun
 HWND WINAPI detourCreateDialogIndirectParamA(HINSTANCE hInstance, LPCDLGTEMPLATEA lpTemplate, HWND hWndParent, DLGPROC lpDialogFunc, LPARAM dwInitParam) {
     auto returnVal = pCreateDialogIndirectParamA(hInstance, lpTemplate, hWndParent, lpDialogFunc, dwInitParam);
 
-    if (hint == NULL && hWndParent != NULL)
-    {
-        CWnd* parent = CWnd::FromHandle(hWndParent);
+    //Custom hints are unused for now
+    //if (hint == NULL && hWndParent != NULL)
+    //{
+    //    CWnd* parent = CWnd::FromHandle(hWndParent);
 
-        if (parent->GetParent())
-        {
-            hint = parent->GetParent()->GetDlgItem(1003);
-            //advancedOptionsBtn.hintObject = hint;
-        }
-    }
+    //    if (parent->GetParent())
+    //    {
+    //        hint = parent->GetParent()->GetDlgItem(1003);
+    //        //advancedOptionsBtn.hintObject = hint;
+    //    }
+    //}
 
-    if (returnVal != NULL && !(advancedOptionsBtn.GetSafeHwnd() && ::IsWindow(advancedOptionsBtn.GetSafeHwnd()))) {
+    if (returnVal != NULL) {
         CWnd* pWnd = CWnd::FromHandle(returnVal);
 
         CString title;
         pWnd->GetWindowTextW(title);
 
-        if (title == L"Video options" || title == L"Настройки видео" || title == L"Opcje grafiki" 
-            || title == L"Opzioni video" || title == L"Options vidéo" || title == L"Video alternativ"
-            || title == L"Video opties" || title == L"Opções de vídeo" || title == L"Video-Optionen"
-            || title == L"Opciones de vídeo" || title == L"Opciones Video")
+        if (createAdvancedOptions && !(advancedOptionsBtn.GetSafeHwnd() && ::IsWindow(advancedOptionsBtn.GetSafeHwnd()))) {
+            //Video options advanced button
+            if (title == L"Video options" || title == L"Настройки видео" || title == L"Opcje grafiki"
+                || title == L"Opzioni video" || title == L"Options vidéo" || title == L"Video alternativ"
+                || title == L"Video opties" || title == L"Opções de vídeo" || title == L"Video-Optionen"
+                || title == L"Opciones de vídeo" || title == L"Opciones Video")
+            {
+                //Get preview rectangle
+                CRect previewRect;
+                CWnd* previewWnd = pWnd->GetDlgItem(1258);
+                previewWnd->GetWindowRect(&previewRect);
+                pWnd->ScreenToClient(&previewRect);
+                //
+
+                //Calculate text size, 2002 is one of the checkboxes in Video options menu.
+                CWnd* comboBox = pWnd->GetDlgItem(2002);
+                CDC* comboDC = comboBox->GetDC();
+
+                CFont* font = comboBox->GetFont();
+
+                CFont* old = comboDC->SelectObject(font);
+
+                CSize textSize = comboDC->GetTextExtent(advancedOptionsLabel);
+
+                comboDC->SelectObject(old);
+
+                int buttonWidth = textSize.cx;
+                //
+
+                if (leftAlign)
+                    buttonWidth += 8;
+                else
+                    buttonWidth += 13;
+
+                int buttonHeight = 25;
+
+                RECT btnRect;
+                btnRect.left = previewRect.left + (previewRect.Width() / 2) - (buttonWidth / 2);
+                btnRect.top = (previewRect.top / 2) - (buttonHeight / 2);
+                btnRect.right = btnRect.left + buttonWidth;
+                btnRect.bottom = btnRect.top + buttonHeight;
+
+                if (leftAlign)
+                    advancedOptionsBtn.Create(advancedOptionsLabel, WS_CHILD | WS_VISIBLE | BS_PUSHBUTTON | BS_LEFT, btnRect, pWnd, BUTTON_IDENTIFIER);
+                else
+                    advancedOptionsBtn.Create(advancedOptionsLabel, WS_CHILD | WS_VISIBLE | BS_PUSHBUTTON, btnRect, pWnd, BUTTON_IDENTIFIER);
+
+                advancedOptionsBtn.SetFont(font);
+
+                SetWindowLongPtr(advancedOptionsBtn.m_hWnd, GWLP_USERDATA, BUTTON_IDENTIFIER);
+
+                ogVideoOptWndProc = (WNDPROC)SetWindowLongPtr(returnVal, GWLP_WNDPROC, (LONG_PTR)VideoOptWndProc);
+            }
+        }
+
+        //IPX address book
+        if (overrideAddressBook)
         {
-            //Get preview rectangle
-            CRect previewRect;
-            CWnd *previewWnd = pWnd->GetDlgItem(1258);
-            previewWnd->GetWindowRect(&previewRect);
-            pWnd->ScreenToClient(&previewRect);
-            //
+            if (title == L"Network play" || title == L"Netzwerk-Spiel" || title == L"Juego en Red" || title == L"Partida en red" || title == L"Jeu sur réseau"
+                || title == L"Gioco in rete" || title == L"Spelen in netwerk" || title == L"Gra w sieci" || title == L"Jogo de rede" || title == L"Сетевая игра"
+                || title == L"Nätverk spel")
+            {
+                //Get original controls
+                CWnd* orgAddressBook = pWnd->GetDlgItem(1243);
 
-            //Calculate text size, 2002 is one of the checkboxes in Video options menu.
-            CWnd *comboBox = pWnd->GetDlgItem(2002);
-            CDC *comboDC = comboBox->GetDC();
+                CWnd* ipxBtn = pWnd->GetDlgItem(4003);
+                CWnd* tcpBtn = pWnd->GetDlgItem(4004);
 
-            CFont *font = comboBox->GetFont();
+                //Override original window processing methods
+                ogNetworkPlayWndProc = (WNDPROC)SetWindowLongPtr(returnVal, GWLP_WNDPROC, (LONG_PTR)NetworkPlayWndProc);
 
-            CFont *old = comboDC->SelectObject(font);
+                HWND addressBookHWND = orgAddressBook->GetSafeHwnd();
+                ogAddressBookWndProc = (WNDPROC)SetWindowLongPtr(addressBookHWND, GWLP_WNDPROC, (LONG_PTR)AddressBookBtnWndProc);
 
-            CSize textSize = comboDC->GetTextExtent(advancedOptionsLabel);
+                HWND ipxHWND = ipxBtn->GetSafeHwnd();
+                ogIPXBtnWndProc = (WNDPROC)SetWindowLongPtr(ipxHWND, GWLP_WNDPROC, (LONG_PTR)IPXBtnWndProc);
 
-            comboDC->SelectObject(old);
+                HWND tcpHWND = tcpBtn->GetSafeHwnd();
+                ogTCPBtnWndProc = (WNDPROC)SetWindowLongPtr(tcpHWND, GWLP_WNDPROC, (LONG_PTR)TCPBtnWndProc);
 
-            int buttonWidth = textSize.cx;
-            //
+                //Check if TCP or IPX is selected upon entering and reenable the IPX button if its disabled
+                IPXEnabled = !IsWindowEnabled(addressBookHWND);
 
-            if (leftAlign)
-                buttonWidth += 8;
-            else
-                buttonWidth += 13;
-
-            int buttonHeight = 25;
-
-            RECT btnRect;
-            btnRect.left = previewRect.left + (previewRect.Width() / 2) - (buttonWidth / 2);
-            btnRect.top = (previewRect.top / 2) - (buttonHeight / 2);
-            btnRect.right = btnRect.left + buttonWidth;
-            btnRect.bottom = btnRect.top + buttonHeight;
-
-            if(leftAlign)
-                advancedOptionsBtn.Create(advancedOptionsLabel, WS_CHILD | WS_VISIBLE | BS_PUSHBUTTON | BS_LEFT, btnRect, pWnd, BUTTON_IDENTIFIER);
-            else
-                advancedOptionsBtn.Create(advancedOptionsLabel, WS_CHILD | WS_VISIBLE | BS_PUSHBUTTON, btnRect, pWnd, BUTTON_IDENTIFIER);
-
-            advancedOptionsBtn.SetFont(font);
-
-            SetWindowLongPtr(advancedOptionsBtn.m_hWnd, GWLP_USERDATA, BUTTON_IDENTIFIER);
-
-            ogVideoOptWndProc = (WNDPROC)SetWindowLongPtr(returnVal, GWLP_WNDPROC, (LONG_PTR)VideoOptWndProc);
+                if (IPXEnabled)
+                    EnableWindow(addressBookHWND, true);
+            }
         }
     }
 
@@ -229,9 +404,10 @@ BOOL APIENTRY DllMain( HMODULE hModule,
     {
     case DLL_PROCESS_ATTACH:
     {
-        bool exists = std::filesystem::exists("settings.exe");
+        createAdvancedOptions = std::filesystem::exists("settings.exe");
+        overrideAddressBook = std::filesystem::exists("ipxaddress.exe");
 
-        if (exists) 
+        if (createAdvancedOptions || overrideAddressBook)
         {
             MH_STATUS status = MH_Initialize();
 
