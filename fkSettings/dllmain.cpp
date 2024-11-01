@@ -26,6 +26,9 @@ extern "C" { int __afxForceUSRDLL; }
 std::string lang;
 CButton advancedOptionsBtn;
 LPCTSTR advancedOptionsLabel;
+
+CWnd* tcpAddressDropdown;
+
 bool leftAlign = false;
 
 bool IPXEnabled = false;
@@ -84,6 +87,9 @@ LRESULT CALLBACK TCPBtnWndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lP
     {
         LRESULT result = CallWindowProc(ogTCPBtnWndProc, hWnd, message, wParam, lParam);
         IPXEnabled = false;
+
+        if (tcpAddressDropdown != NULL)
+            tcpAddressDropdown->ShowWindow(true);
         return result;
     }
     break;
@@ -105,6 +111,10 @@ LRESULT CALLBACK IPXBtnWndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lP
     {
         LRESULT result = CallWindowProc(ogIPXBtnWndProc, hWnd, message, wParam, lParam);
         IPXEnabled = true;
+
+        if (tcpAddressDropdown != NULL)
+            tcpAddressDropdown->ShowWindow(false);
+
         return result;
     }
     break;
@@ -315,6 +325,8 @@ HWND WINAPI detourCreateDialogIndirectParamA(HINSTANCE hInstance, LPCDLGTEMPLATE
                 CWnd* ipxBtn = pWnd->GetDlgItem(4003);
                 CWnd* tcpBtn = pWnd->GetDlgItem(4004);
 
+                tcpAddressDropdown = pWnd->GetDlgItem(1242);
+
                 //Override original window processing methods
                 ogNetworkPlayWndProc = (WNDPROC)SetWindowLongPtr(returnVal, GWLP_WNDPROC, (LONG_PTR)NetworkPlayWndProc);
 
@@ -330,8 +342,13 @@ HWND WINAPI detourCreateDialogIndirectParamA(HINSTANCE hInstance, LPCDLGTEMPLATE
                 //Check if TCP or IPX is selected upon entering and reenable the IPX button if its disabled
                 IPXEnabled = !IsWindowEnabled(addressBookHWND);
 
-                if (IPXEnabled)
+                if (IPXEnabled) 
+                {
                     EnableWindow(addressBookHWND, true);
+
+                    if (tcpAddressDropdown != NULL)
+                        tcpAddressDropdown->ShowWindow(false);
+                }
             }
         }
     }
