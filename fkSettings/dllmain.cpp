@@ -194,6 +194,9 @@ LRESULT CALLBACK NetworkPlayWndProc(HWND hWnd, UINT message, WPARAM wParam, LPAR
             else //Something else has been clicked, let the frontend handle it
                 return CallWindowProc(ogNetworkPlayWndProc, hWnd, message, wParam, lParam);
         }
+        else {
+            return CallWindowProc(ogNetworkPlayWndProc, hWnd, message, wParam, lParam);
+        }
     }
     break;
     default:
