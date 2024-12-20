@@ -265,7 +265,7 @@ HWND WINAPI detourCreateDialogIndirectParamA(HINSTANCE hInstance, LPCDLGTEMPLATE
             if (title == L"Video options" || title == L"Настройки видео" || title == L"Opcje grafiki"
                 || title == L"Opzioni video" || title == L"Options vidéo" || title == L"Video alternativ"
                 || title == L"Video opties" || title == L"Opções de vídeo" || title == L"Video-Optionen"
-                || title == L"Opciones de vídeo" || title == L"Opciones Video")
+                || title == L"Opciones de vídeo" || title == L"Opciones Video" || title == L"Nastavení videa")
             {
                 //Get preview rectangle
                 CRect previewRect;
@@ -320,7 +320,7 @@ HWND WINAPI detourCreateDialogIndirectParamA(HINSTANCE hInstance, LPCDLGTEMPLATE
         {
             if (title == L"Network play" || title == L"Netzwerk-Spiel" || title == L"Juego en Red" || title == L"Partida en red" || title == L"Jeu sur réseau"
                 || title == L"Gioco in rete" || title == L"Spelen in netwerk" || title == L"Gra w sieci" || title == L"Jogo de rede" || title == L"Сетевая игра"
-                || title == L"Nätverk spel")
+                || title == L"Nätverk spel" || title == L"Síťová hra" || title == L"Sítová hra")
             {
                 //Get original controls
                 CWnd* orgAddressBook = pWnd->GetDlgItem(1243);
@@ -402,7 +402,12 @@ void AssignLabels()
     else if (lang == "sv")
     {
         advancedOptionsLabel = _TEXT("Avancerade inställningar");
-    }else
+    }
+    else if (lang == "cs")
+    {
+        advancedOptionsLabel = _TEXT("Pokročilá nastavení");
+    }
+    else
     {
         advancedOptionsLabel = _TEXT("Advanced options");
     }
