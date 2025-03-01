@@ -152,3 +152,34 @@ DWORD Hooks::scanPattern(const char* name, const char* pattern, const char* mask
 
 	return ret;
 }
+
+DWORD Hooks::scanPattern2(const char* name, const char* pattern, DWORD expected) {
+	uintptr_t ret = 0;
+	//rebase offsets in cached file
+	//if (!hl::PatternScanner::WAregion.base) {
+	//	hl::FindPattern(pattern);
+	//	for (auto& it : scanNameToAddr) {
+	//		it.second = it.second + (hl::PatternScanner::WAregion.base - 0x401000);
+	//		scanAddrToName[it.second] = it.first;
+	//	}
+	//}
+	auto it = scanNameToAddr.find(name);
+	if (it == scanNameToAddr.end()) {
+		ret = hl::FindPattern(pattern);
+		printf("scanPattern: %s = 0x%X\n", name, ret);
+		if (!ret) {
+			std::string msg = "scanPattern: failed to find memory pattern: ";
+			msg += name;
+			throw std::runtime_error(msg);
+		}
+		scanNameToAddr[name] = ret;
+		scanAddrToName[ret] = name;
+		scanFoundNew = true;
+	}
+	else {
+		ret = it->second;//scanNameToAddr[name];
+		printf("scanCache: %s = 0x%X\n", name, ret);
+	}
+
+	return ret;
+}
