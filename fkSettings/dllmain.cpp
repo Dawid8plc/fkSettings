@@ -2,7 +2,7 @@
 
 #include <afxwin.h>         // MFC core and standard components
 #include <afxext.h>         // MFC extensions
-
+#include "winerror.h"
 #include <filesystem>
 
 #ifdef _X86_
@@ -235,6 +235,12 @@ LRESULT CALLBACK VideoOptWndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM 
     return 0;
 }
 
+void* VideoOptionsRes;
+void* NetworkPlayRes;
+void* StatisticsRes;
+
+HWND statisticsScreen;
+
 //Function that hooks to the CreateDialogIndirectParamA method
 typedef HWND(WINAPI* CreateDialogIndirectParamAType)(HINSTANCE hInstance, LPCDLGTEMPLATEA lpTemplate, HWND hWndParent, DLGPROC lpDialogFunc, LPARAM dwInitParam);
 CreateDialogIndirectParamAType pCreateDialogIndirectParamA = nullptr; //original function pointer after hook
@@ -255,6 +261,7 @@ HWND WINAPI detourCreateDialogIndirectParamA(HINSTANCE hInstance, LPCDLGTEMPLATE
     //}
 
     if (returnVal != NULL) {
+
         CWnd* pWnd = CWnd::FromHandle(returnVal);
 
         CString title;
@@ -262,10 +269,7 @@ HWND WINAPI detourCreateDialogIndirectParamA(HINSTANCE hInstance, LPCDLGTEMPLATE
 
         if (createAdvancedOptions && !(advancedOptionsBtn.GetSafeHwnd() && ::IsWindow(advancedOptionsBtn.GetSafeHwnd()))) {
             //Video options advanced button
-            if (title == L"Video options" || title == L"Настройки видео" || title == L"Opcje grafiki"
-                || title == L"Opzioni video" || title == L"Options vidéo" || title == L"Video alternativ"
-                || title == L"Video opties" || title == L"Opções de vídeo" || title == L"Video-Optionen"
-                || title == L"Opciones de vídeo" || title == L"Opciones Video" || title == L"Nastavení videa")
+            if(lpTemplate == VideoOptionsRes)
             {
                 //Get preview rectangle
                 CRect previewRect;
@@ -312,15 +316,15 @@ HWND WINAPI detourCreateDialogIndirectParamA(HINSTANCE hInstance, LPCDLGTEMPLATE
                 SetWindowLongPtr(advancedOptionsBtn.m_hWnd, GWLP_USERDATA, BUTTON_IDENTIFIER);
 
                 ogVideoOptWndProc = (WNDPROC)SetWindowLongPtr(returnVal, GWLP_WNDPROC, (LONG_PTR)VideoOptWndProc);
+
+                return returnVal;
             }
         }
 
         //IPX address book
         if (overrideAddressBook)
         {
-            if (title == L"Network play" || title == L"Netzwerk-Spiel" || title == L"Juego en Red" || title == L"Partida en red" || title == L"Jeu sur réseau"
-                || title == L"Gioco in rete" || title == L"Spelen in netwerk" || title == L"Gra w sieci" || title == L"Jogo de rede" || title == L"Сетевая игра"
-                || title == L"Nätverk spel" || title == L"Síťová hra" || title == L"Sítová hra")
+            if (lpTemplate == NetworkPlayRes)
             {
                 //Get original controls
                 CWnd* orgAddressBook = pWnd->GetDlgItem(1243);
@@ -352,12 +356,67 @@ HWND WINAPI detourCreateDialogIndirectParamA(HINSTANCE hInstance, LPCDLGTEMPLATE
                     if (tcpAddressDropdown != NULL)
                         tcpAddressDropdown->ShowWindow(false);
                 }
+
+                return returnVal;
             }
+        }
+
+        //Statistics screen
+        if(lpTemplate == StatisticsRes)
+        {
+			statisticsScreen = returnVal;
         }
     }
 
     return returnVal;
 }
+
+
+std::string GetWindowTextAsString(HWND hWnd) {
+    // Get the text length first
+    int length = GetWindowTextLengthA(hWnd);
+    if (length == 0) return ""; // No text or error
+
+    // Allocate a buffer (including null terminator)
+    std::string text(length + 1, '\0');
+
+    // Retrieve the text
+    GetWindowTextA(hWnd, &text[0], length + 1);
+
+    // Remove excess null characters (optional)
+    text.resize(length);
+
+    return text;
+}
+
+//Function that hooks to the TextOutA method
+typedef BOOL(WINAPI* TextOutAType)(HDC hdc, int x, int y, LPCSTR lpString, int c);
+TextOutAType pTextOutA = nullptr; //original function pointer after hook
+TextOutAType pTextOutATarget; //original function pointer BEFORE hook do not call this!
+BOOL WINAPI detourTextOutA(HDC hdc, int x, int y, LPCSTR lpString, int c) {
+    //auto returnVal = pTextOutA(hdc, x, y, lpString, c);
+    //return returnVal;
+    RECT rect;
+    rect.left = x;
+    rect.top = y;
+    rect.right = x;
+    rect.bottom = y;
+
+    HWND wnd = WindowFromDC(hdc);
+
+    double scale = GetDpiScaleFactor(wnd);
+
+    if (wnd == statisticsScreen)
+    {
+        rect.top = rect.top * scale;
+        rect.bottom = rect.bottom * scale;
+    }
+
+    DrawTextA(hdc, lpString, c, &rect, DT_LEFT | DT_NOCLIP);
+
+    return TRUE;
+}
+
 
 void AssignLabels() 
 {
@@ -413,6 +472,31 @@ void AssignLabels()
     }
 }
 
+void* GetResourcePointer(HINSTANCE hInstance, int resourceID, LPCWSTR resourceType) {
+    // Find the resource
+    HRSRC hRes = FindResource(hInstance, MAKEINTRESOURCE(resourceID), resourceType);
+    if (!hRes) {
+        //std::cerr << "Failed to find resource ID " << resourceID << "\n";
+        return nullptr;
+    }
+
+    // Load the resource
+    HGLOBAL hMem = LoadResource(hInstance, hRes);
+    if (!hMem) {
+        //std::cerr << "Failed to load resource ID " << resourceID << "\n";
+        return nullptr;
+    }
+
+    // Lock the resource and return the pointer
+    void* pResourceData = LockResource(hMem);
+    if (!pResourceData) {
+        //std::cerr << "Failed to lock resource ID " << resourceID << "\n";
+    }
+
+    return pResourceData;
+}
+
+
 void shutdown() {
 
     MH_Uninitialize();
@@ -432,8 +516,8 @@ BOOL APIENTRY DllMain( HMODULE hModule,
         createAdvancedOptions = std::filesystem::exists("settings.exe");
         overrideAddressBook = std::filesystem::exists("ipxaddress.exe");
 
-        if (createAdvancedOptions || overrideAddressBook)
-        {
+        //if (createAdvancedOptions || overrideAddressBook)
+        //{
             MH_STATUS status = MH_Initialize();
 
             if (status != MH_OK)
@@ -453,6 +537,20 @@ BOOL APIENTRY DllMain( HMODULE hModule,
                 return 1;
             }
 
+            if (MH_CreateHookApiEx(L"gdi32", "TextOutA", &detourTextOutA, reinterpret_cast<void**>(&pTextOutA), reinterpret_cast<void**>(&pTextOutATarget)) != MH_OK) {
+                shutdown();
+                return 1;
+            }
+
+            if (MH_EnableHook(reinterpret_cast<void**>(pTextOutATarget)) != MH_OK) {
+                shutdown();
+                return 1;
+            }
+
+            VideoOptionsRes = GetResourcePointer(GetModuleHandle(NULL), 195, RT_DIALOG);
+            NetworkPlayRes = GetResourcePointer(GetModuleHandle(NULL), 402, RT_DIALOG);
+            StatisticsRes = GetResourcePointer(GetModuleHandle(NULL), 292, RT_DIALOG);
+
             Initialized = true;
 
             if (std::filesystem::exists("language.txt")) 
@@ -467,7 +565,7 @@ BOOL APIENTRY DllMain( HMODULE hModule,
             }
 
             AssignLabels();
-        }
+        //}
     }
         break;
     case DLL_THREAD_ATTACH:
