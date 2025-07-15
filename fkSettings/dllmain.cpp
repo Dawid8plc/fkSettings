@@ -410,6 +410,9 @@ BOOL WINAPI detourTextOutA(HDC hdc, int x, int y, LPCSTR lpString, int c) {
     {
         rect.top = rect.top * scale;
         rect.bottom = rect.bottom * scale;
+
+        rect.left = rect.left * scale;
+        rect.right = rect.right * scale;
     }
 
     DrawTextA(hdc, lpString, c, &rect, DT_LEFT | DT_NOCLIP);
@@ -465,6 +468,10 @@ void AssignLabels()
     else if (lang == "cs")
     {
         advancedOptionsLabel = _TEXT("Pokročilá nastavení");
+    }
+    else if (lang == "zh-Hans")
+    {
+        advancedOptionsLabel = _TEXT("高级选项");
     }
     else
     {
