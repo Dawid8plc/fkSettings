@@ -44,6 +44,21 @@ double GetDpiScaleFactor(HWND hwnd)
     return dpi / 96.0; // 96 is the default DPI
 }
 
+LPCSTR lastFoundResourceName = nullptr;
+
+typedef HRSRC(WINAPI* FindResourceAType)(HMODULE hModule, LPCSTR lpName, LPCSTR lpType);
+FindResourceAType pFindResourceA = nullptr; //original function pointer after hook
+FindResourceAType pFindResourceATarget; //original function pointer BEFORE hook do not call this!
+HRSRC WINAPI detourFindResourceA(HMODULE hModule, LPCSTR lpName, LPCSTR lpType)
+{
+    auto returnVal = pFindResourceA(hModule, lpName, lpType);
+
+    if ((int)lpType == (int)MAKEINTRESOURCE(5))
+        lastFoundResourceName = lpName;
+
+    return returnVal;
+}
+
 //Run the settings app if it exists
 void HandleButtonClick(HWND hWnd)
 {
@@ -235,10 +250,6 @@ LRESULT CALLBACK VideoOptWndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM 
     return 0;
 }
 
-void* VideoOptionsRes;
-void* NetworkPlayRes;
-void* StatisticsRes;
-
 HWND statisticsScreen;
 
 //Function that hooks to the CreateDialogIndirectParamA method
@@ -269,7 +280,7 @@ HWND WINAPI detourCreateDialogIndirectParamA(HINSTANCE hInstance, LPCDLGTEMPLATE
 
         if (createAdvancedOptions && !(advancedOptionsBtn.GetSafeHwnd() && ::IsWindow(advancedOptionsBtn.GetSafeHwnd()))) {
             //Video options advanced button
-            if(lpTemplate == VideoOptionsRes)
+            if(lastFoundResourceName == (LPCSTR)0xC3)
             {
                 //Get preview rectangle
                 CRect previewRect;
@@ -324,7 +335,7 @@ HWND WINAPI detourCreateDialogIndirectParamA(HINSTANCE hInstance, LPCDLGTEMPLATE
         //IPX address book
         if (overrideAddressBook)
         {
-            if (lpTemplate == NetworkPlayRes)
+            if (lastFoundResourceName == (LPCSTR)0x192)
             {
                 //Get original controls
                 CWnd* orgAddressBook = pWnd->GetDlgItem(1243);
@@ -362,7 +373,7 @@ HWND WINAPI detourCreateDialogIndirectParamA(HINSTANCE hInstance, LPCDLGTEMPLATE
         }
 
         //Statistics screen
-        if(lpTemplate == StatisticsRes)
+        if(lastFoundResourceName == (LPCSTR)0x124)
         {
 			statisticsScreen = returnVal;
         }
@@ -370,7 +381,6 @@ HWND WINAPI detourCreateDialogIndirectParamA(HINSTANCE hInstance, LPCDLGTEMPLATE
 
     return returnVal;
 }
-
 
 std::string GetWindowTextAsString(HWND hWnd) {
     // Get the text length first
@@ -394,8 +404,6 @@ typedef BOOL(WINAPI* TextOutAType)(HDC hdc, int x, int y, LPCSTR lpString, int c
 TextOutAType pTextOutA = nullptr; //original function pointer after hook
 TextOutAType pTextOutATarget; //original function pointer BEFORE hook do not call this!
 BOOL WINAPI detourTextOutA(HDC hdc, int x, int y, LPCSTR lpString, int c) {
-    //auto returnVal = pTextOutA(hdc, x, y, lpString, c);
-    //return returnVal;
     RECT rect;
     rect.left = x;
     rect.top = y;
@@ -479,31 +487,6 @@ void AssignLabels()
     }
 }
 
-void* GetResourcePointer(HINSTANCE hInstance, int resourceID, LPCWSTR resourceType) {
-    // Find the resource
-    HRSRC hRes = FindResource(hInstance, MAKEINTRESOURCE(resourceID), resourceType);
-    if (!hRes) {
-        //std::cerr << "Failed to find resource ID " << resourceID << "\n";
-        return nullptr;
-    }
-
-    // Load the resource
-    HGLOBAL hMem = LoadResource(hInstance, hRes);
-    if (!hMem) {
-        //std::cerr << "Failed to load resource ID " << resourceID << "\n";
-        return nullptr;
-    }
-
-    // Lock the resource and return the pointer
-    void* pResourceData = LockResource(hMem);
-    if (!pResourceData) {
-        //std::cerr << "Failed to lock resource ID " << resourceID << "\n";
-    }
-
-    return pResourceData;
-}
-
-
 void shutdown() {
 
     MH_Uninitialize();
@@ -523,56 +506,59 @@ BOOL APIENTRY DllMain( HMODULE hModule,
         createAdvancedOptions = std::filesystem::exists("settings.exe");
         overrideAddressBook = std::filesystem::exists("ipxaddress.exe");
 
-        //if (createAdvancedOptions || overrideAddressBook)
-        //{
-            MH_STATUS status = MH_Initialize();
+        MH_STATUS status = MH_Initialize();
 
-            if (status != MH_OK)
-            {
-                std::string sStatus = MH_StatusToString(status);
-                shutdown();
-                return 0;
-            }
+        if (status != MH_OK)
+        {
+            std::string sStatus = MH_StatusToString(status);
+            shutdown();
+            return 0;
+        }
 
-            if (MH_CreateHookApiEx(L"user32", "CreateDialogIndirectParamA", &detourCreateDialogIndirectParamA, reinterpret_cast<void**>(&pCreateDialogIndirectParamA), reinterpret_cast<void**>(&pCreateDialogIndirectParamATarget)) != MH_OK) {
-                shutdown();
-                return 1;
-            }
+        if (MH_CreateHookApiEx(L"user32", "CreateDialogIndirectParamA", &detourCreateDialogIndirectParamA, reinterpret_cast<void**>(&pCreateDialogIndirectParamA), reinterpret_cast<void**>(&pCreateDialogIndirectParamATarget)) != MH_OK) {
+            shutdown();
+            return 1;
+        }
 
-            if (MH_EnableHook(reinterpret_cast<void**>(pCreateDialogIndirectParamATarget)) != MH_OK) {
-                shutdown();
-                return 1;
-            }
+        if (MH_EnableHook(reinterpret_cast<void**>(pCreateDialogIndirectParamATarget)) != MH_OK) {
+            shutdown();
+            return 1;
+        }
 
-            if (MH_CreateHookApiEx(L"gdi32", "TextOutA", &detourTextOutA, reinterpret_cast<void**>(&pTextOutA), reinterpret_cast<void**>(&pTextOutATarget)) != MH_OK) {
-                shutdown();
-                return 1;
-            }
+        if (MH_CreateHookApiEx(L"kernel32", "FindResourceA", &detourFindResourceA, reinterpret_cast<void**>(&pFindResourceA), reinterpret_cast<void**>(&pFindResourceATarget)) != MH_OK) {
+            shutdown();
+            return 1;
+        }
 
-            if (MH_EnableHook(reinterpret_cast<void**>(pTextOutATarget)) != MH_OK) {
-                shutdown();
-                return 1;
-            }
+        if (MH_EnableHook(reinterpret_cast<void**>(pFindResourceATarget)) != MH_OK) {
+            shutdown();
+            return 1;
+        }
 
-            VideoOptionsRes = GetResourcePointer(GetModuleHandle(NULL), 195, RT_DIALOG);
-            NetworkPlayRes = GetResourcePointer(GetModuleHandle(NULL), 402, RT_DIALOG);
-            StatisticsRes = GetResourcePointer(GetModuleHandle(NULL), 292, RT_DIALOG);
+        if (MH_CreateHookApiEx(L"gdi32", "TextOutA", &detourTextOutA, reinterpret_cast<void**>(&pTextOutA), reinterpret_cast<void**>(&pTextOutATarget)) != MH_OK) {
+            shutdown();
+            return 1;
+        }
 
-            Initialized = true;
+        if (MH_EnableHook(reinterpret_cast<void**>(pTextOutATarget)) != MH_OK) {
+            shutdown();
+            return 1;
+        }
 
-            if (std::filesystem::exists("language.txt")) 
-            {
-                std::ifstream t("language.txt");
-                std::stringstream buffer;
-                buffer << t.rdbuf();
-                lang = buffer.str();
-            }
-            else {
-                lang = "en";
-            }
+        Initialized = true;
 
-            AssignLabels();
-        //}
+        if (std::filesystem::exists("language.txt")) 
+        {
+            std::ifstream t("language.txt");
+            std::stringstream buffer;
+            buffer << t.rdbuf();
+            lang = buffer.str();
+        }
+        else {
+            lang = "en";
+        }
+
+        AssignLabels();
     }
         break;
     case DLL_THREAD_ATTACH:
