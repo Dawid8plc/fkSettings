@@ -44,6 +44,41 @@ double GetDpiScaleFactor(HWND hwnd)
     return dpi / 96.0; // 96 is the default DPI
 }
 
+void PatchCall(void* callAddr, void* newFunc) {
+    DWORD oldProtect;
+    BYTE* p = (BYTE*)callAddr;
+
+    if (*p != 0xE8) return;
+
+    DWORD src = (DWORD)callAddr + 5;
+    DWORD dst = (DWORD)newFunc;
+    DWORD rel = dst - src;
+
+    VirtualProtect(p, 5, PAGE_EXECUTE_READWRITE, &oldProtect);
+    *(DWORD*)(p + 1) = rel;
+    VirtualProtect(p, 5, oldProtect, &oldProtect);
+}
+
+int __fastcall WeaponsSetWindowPos_Label(int hWnd, void* lol, HWND hWndInsertAfter, int X, int Y, int cx, int cy, UINT uFlags)
+{
+    HWND hwnd = *(HWND*)(hWnd + 28);
+    double scale = GetDpiScaleFactor(hwnd);
+
+    return SetWindowPos(hwnd, hWndInsertAfter, X, Y, cx, cy, uFlags);
+}
+
+int __fastcall WeaponsSetWindowPos_Input(int hWnd, void* lol, HWND hWndInsertAfter, int X, int Y, int cx, int cy, UINT uFlags)
+{
+    HWND hwnd = *(HWND*)(hWnd + 28);
+    double scale = GetDpiScaleFactor(hwnd);
+
+    if(scale > 1)
+        Y = (int)round(Y + (20 * (scale - 1)));
+
+    return SetWindowPos(hwnd, hWndInsertAfter, X, Y, cx, cy, uFlags);
+}
+
+
 LPCSTR lastFoundResourceName = nullptr;
 
 typedef HRSRC(WINAPI* FindResourceAType)(HMODULE hModule, LPCSTR lpName, LPCSTR lpType);
@@ -544,6 +579,13 @@ BOOL APIENTRY DllMain( HMODULE hModule,
             shutdown();
             return 1;
         }
+
+        DWORD CFormViewSetWindowPos4Addr = Hooks::scanPattern2("CFormViewSetWindowPos4", "E8 55 4E 09 00 8B 45 F0 83 C0");
+        DWORD CFormViewSetWindowPos5Addr = Hooks::scanPattern2("CFormViewSetWindowPos5", "E8 06 4E 09 00 8D 4D A4 E8 13 3C");
+
+        PatchCall((void*)CFormViewSetWindowPos5Addr, WeaponsSetWindowPos_Input);
+
+        PatchCall((void*)CFormViewSetWindowPos4Addr, WeaponsSetWindowPos_Input);
 
         Initialized = true;
 
