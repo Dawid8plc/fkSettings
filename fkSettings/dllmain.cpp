@@ -73,7 +73,7 @@ int __fastcall WeaponsSetWindowPos_Input(int hWnd, void* lol, HWND hWndInsertAft
     double scale = GetDpiScaleFactor(hwnd);
 
     if(scale > 1)
-        Y = (int)round(Y + (20 * (scale - 1)));
+        Y = (int)round(Y + (15 * (scale - 1)));
 
     return SetWindowPos(hwnd, hWndInsertAfter, X, Y, cx, cy, uFlags);
 }
