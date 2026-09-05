@@ -78,6 +78,17 @@ int __fastcall WeaponsSetWindowPos_Input(int hWnd, void* lol, HWND hWndInsertAft
     return SetWindowPos(hwnd, hWndInsertAfter, X, Y, cx, cy, uFlags);
 }
 
+int __fastcall WeaponsSetWindowPos_Button(int hWnd, void* lol, HWND hWndInsertAfter, int X, int Y, int cx, int cy, UINT uFlags)
+{
+    HWND hwnd = *(HWND*)(hWnd + 28);
+    double scale = GetDpiScaleFactor(hwnd);
+
+    if (scale > 1)
+        X = (int)round(X + (15 * (scale - 1)));
+
+    return SetWindowPos(hwnd, hWndInsertAfter, X, Y, cx, cy, uFlags);
+}
+
 
 LPCSTR lastFoundResourceName = nullptr;
 
@@ -522,6 +533,22 @@ void AssignLabels()
     }
 }
 
+//int lastWeaponParamID = 0;
+//int ObtainWeaponParamIDAddrRet = 0;
+//DWORD CWndGetDlgItemTarget = 0;
+//__declspec(naked) void ObtainWeaponParamID() {
+//
+//    __asm {
+//        mov lastWeaponParamID, eax
+//
+//        call dword ptr[CWndGetDlgItemTarget]
+//
+//        mov[ebp - 38h], eax
+//
+//        jmp ObtainWeaponParamIDAddrRet
+//    }
+//}
+
 void shutdown() {
 
     MH_Uninitialize();
@@ -583,9 +610,20 @@ BOOL APIENTRY DllMain( HMODULE hModule,
         DWORD CFormViewSetWindowPos4Addr = Hooks::scanPattern2("CFormViewSetWindowPos4", "E8 55 4E 09 00 8B 45 F0 83 C0");
         DWORD CFormViewSetWindowPos5Addr = Hooks::scanPattern2("CFormViewSetWindowPos5", "E8 06 4E 09 00 8D 4D A4 E8 13 3C");
 
-        PatchCall((void*)CFormViewSetWindowPos5Addr, WeaponsSetWindowPos_Input);
+        DWORD CFormViewSetWindowPos6Addr = Hooks::scanPattern2("CFormViewSetWindowPos6", "E8 E6 4E 09 00 6A 00 8D 4D A4 E8 F1");
+        DWORD CFormViewSetWindowPos7Addr = Hooks::scanPattern2("CFormViewSetWindowPos7", "E8 BF 4E 09 00 8D 4D A4 E8 CC");
 
+        PatchCall((void*)CFormViewSetWindowPos5Addr, WeaponsSetWindowPos_Input);
         PatchCall((void*)CFormViewSetWindowPos4Addr, WeaponsSetWindowPos_Input);
+
+        PatchCall((void*)CFormViewSetWindowPos6Addr, WeaponsSetWindowPos_Button); //moves checkbox text
+        //PatchCall((void*)CFormViewSetWindowPos7Addr, WeaponsSetWindowPos_Button); //moves the checkbox
+
+        //DWORD CFromViewGetDlgItemCall = Hooks::scanPattern2("CFromViewGetDlgItemCall", "E8 B1 4B 09 00 89 45 C8");
+        //CWndGetDlgItemTarget = CFromViewGetDlgItemCall + 5 + *(DWORD*)(CFromViewGetDlgItemCall + 1);
+        //ObtainWeaponParamIDAddrRet = CFromViewGetDlgItemCall + 8;
+
+		//Hooks::hookAsm(CFromViewGetDlgItemCall, (DWORD)ObtainWeaponParamID);
 
         Initialized = true;
 
